@@ -14,13 +14,17 @@ export class Ship {
      * @param {number} position the starting position
      * @param {number} direction +/- 1 
      * @param {string} id The ID of the ship
+     * @param {*} factionColor The chalk color of the faction
      */
-    constructor(shipConfig, position, direction, id) {
+    constructor(shipConfig, position, direction, id, factionColor) {
         // Create a clone of the config.
         const data = JSON.parse(JSON.stringify(shipConfig));
         const keys = Object.keys(data);
         keys.forEach(key => {
-            this.key = data[key];
+            this[key] = data[key];
+        });
+        this.weapons.forEach(weapon => {
+            weapon.cooldownRemaining = 0;
         });
         this.maxShields = this.shields;
         this.maxHull = this.hull;
@@ -28,6 +32,7 @@ export class Ship {
         this.position = position;
         this.direction = direction;
         this.id = id;
+        this.factionColor = factionColor;
     }
 
     /**
@@ -36,10 +41,7 @@ export class Ship {
      * @param {number} tickInterval 
      */
     act(enemyFleet, tickInterval) {
-        // If we need a target, pick one.
-        if (!this.target || !this.target.isDead) {
-            this.selectTarget(enemyFleet);
-        }
+        this.selectTarget(enemyFleet);
         this.moveToTarget(tickInterval);
         this.attack(tickInterval);
     }
@@ -65,16 +67,26 @@ export class Ship {
      * Checks absolute distance to target
      * @returns {number}
      */
-    getDistanceToTarget() {
-        return Math.abs(this.position - this.target.position);
+    getDistanceToTarget(target = this.target) {
+        return Math.abs(this.position - target.position);
+    }
+
+    /**
+     * Checks if a weapon is in range
+     * @param {{range: number}} weapon 
+     * @param {Ship} target 
+     * @returns {boolean}
+     */
+    weaponInRange(weapon, target = this.target) {
+        return weapon.range >= this.getDistanceToTarget(target);
     }
 
     /**
      * Checks if all onboard weapons can hit the target.
      * @returns {boolean}
      */
-    allWeaponsCanHit() {
-        return this.weapons.every(weapon => weapon.range >= this.getDistanceToTarget());
+    allWeaponsCanHit(target = this.target) {
+        return this.weapons.every(weapon => this.weaponInRange(weapon, target));
     }
 
     /**
@@ -88,27 +100,32 @@ export class Ship {
         // If no target is in range, move to the best new target
         const targetOptions = targetsInRange.length > 0 ? targetsInRange : hostileFleet;
 
-        // Choose a target from among those listed.
-        let bestShip = null;
-        let bestPriority = Number.MIN_SAFE_INTEGER;
+        // Choose a target from among those listed, defaulting to the previous target.
+        this.target = !this.target || this.target.isDead
+            ? null
+            : this.target;
+        this.targetPriority = !this.target || this.target.isDead
+            ? Number.MIN_SAFE_INTEGER
+            : this.targetPriority;
         targetOptions.forEach((opt) => {
-            let priority = opt.attack_priority;
+            let priority = opt.aiTarget.attack_priority;
             priority += this.getTargetOptionSpecialPriority(opt);
 
-            if (!bestShip) {
-                bestShip = opt;
-                bestPriority = priority;
+            if (priority > this.targetPriority) {
+                this.print(`Prioritizing New Target: ${opt.id} with priority ${priority}`);
+                this.target = opt;
+                this.targetPriority = priority;
             }
         });
-        this.target = bestShip;
     }
 
     getTargetOptionSpecialPriority(targetOption) {
         const priorities = this.ai.priority_bonus_per_attack_target_type;
-        const bonus = targetOption.ai_attack_target.attack_target_types.reduce((sum, type) => {
+        const bonus = (targetOption.aiTarget.attack_target_types || []).reduce((sum, type) => {
             sum += priorities[type] || 0
             return sum;
         }, 0);
+        return bonus;
     }
 
     /**
@@ -155,13 +172,17 @@ export class Ship {
      * @param {number} tickInterval 
      */
     fire(weapon, tickInterval) {
-        // The weapon is ready to fire!
-        if (!cooldownRemaining) {
-            this.print('Firing ' + weapon.name + '!');
-            this.target.takeDamage(weapon.damage, weapon.ap);
-            weapon.cooldownRemaining = weapon.cooldown * 1000;
+        if (weapon.cooldownRemaining <= 0) {
+            // The weapon is ready to fire, so check range to target.
+            if (this.weaponInRange(weapon)) {
+                this.print('Firing ' + weapon.name);
+                this.target.takeDamage(weapon.damage, weapon.ap);
+                weapon.cooldownRemaining += weapon.cooldown * 1000;
+            }
         } else {
-            weapon.cooldownRemaining = Math.max(0, weapon.cooldownRemaining - tickInterval);
+            // The simulation tick is not infinitely small, so allow this to temporarily
+            // go negative.
+            weapon.cooldownRemaining = weapon.cooldownRemaining - tickInterval;
         }
     }
 
@@ -186,13 +207,20 @@ export class Ship {
             const afterArmor = damage / (1 + (0.01 * armorDiff));
             this.hull -= afterArmor;
         }
+        this.printHealth(1);
         if (this.hull <= 0) {
             this.isDead = true;
+            this.print('DEAD');
         }
-        this.print(`Shields ${this.shields}/${this.maxShields}, Hull ${this.hull}/${this.maxHull}`);
     }
 
-    print(str) {
-        console.log(`- ${this.id}: ${str}`);
+    printHealth(depth = 0) {
+        this.print(`Shields ${this.shields}/${this.maxShields}, Hull ${this.hull}/${this.maxHull}`, depth);
+    }
+
+    print(str, depth = 0) {
+        str = `- ${this.factionColor(this.id)}: ${str}`;
+        str = str.padStart(str.length + 4 * depth, ' ');
+        console.log(str);
     }
 }
