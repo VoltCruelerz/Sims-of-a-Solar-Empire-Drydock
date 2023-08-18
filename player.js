@@ -47,6 +47,7 @@ export class Player {
         const ppr = performance / resources;
 
         return {
+            id: this.id,
             dealt,
             tanked,
             performance,

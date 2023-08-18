@@ -25,7 +25,8 @@ const load = () => {
             cooldown: rawWeapon.cooldown_duration,
             range: rawWeapon.range,
             ap: rawWeapon.hull_armor_penetration,
-            damage: rawWeapon.damage
+            damage: rawWeapon.damage,
+            type: rawWeapon.weapon_type
         };
     });
     const weaponDict = weapons.reduce((acc, weapon) => {
@@ -42,22 +43,44 @@ const load = () => {
         .filter(p => p.obj.physics && p.obj.weapons?.weapons)
         .map(shipBundle => {
             const shipRaw = shipBundle.obj;
-            return {
-                name: shipBundle.name,
-                ai: shipRaw.ai,
-                aiTarget: shipRaw.ai_attack_target,
-                accelTime: shipRaw.physics.time_to_max_linear_speed,
-                speed: shipRaw.physics.max_linear_speed,
-                weapons: shipRaw.weapons.weapons.map((shipWeapon) => weaponDict[shipWeapon.weapon]),
-                hull: shipRaw.health.max_hull_points,
-                shields: shipRaw.health.max_shield_points,
-                mitigation: shipRaw.health.shield_mitigation,
-                armor: shipRaw.health.hull_armor,
-                supply: shipRaw.build?.supply_cost || 0,
-                credits: shipRaw.build?.price?.credits || 0,
-                metal: shipRaw.build?.price?.metal || 0,
-                crystal: shipRaw.build?.price?.crystal || 0
-            };
+            if (shipRaw.levels) {
+                const level1 = shipRaw.levels.levels[0];
+                return {
+                    name: shipBundle.name,
+                    ai: shipRaw.ai,
+                    aiTarget: shipRaw.ai_attack_target,
+                    accelTime: shipRaw.physics.time_to_max_linear_speed,
+                    speed: shipRaw.physics.max_linear_speed,
+                    weapons: shipRaw.weapons.weapons
+                        .map((shipWeapon) => weaponDict[shipWeapon.weapon])
+                        .filter(weapon => weapon.type !== 'planet_bombing'),
+                    hull: level1.unit_modifiers.additive_values.max_hull_points,
+                    shields: level1.unit_modifiers.additive_values.max_shield_points,
+                    mitigation: level1.unit_modifiers.additive_values.shield_mitigation,
+                    armor: level1.unit_modifiers.additive_values.hull_armor,
+                    supply: shipRaw.build?.supply_cost || 0,
+                    credits: shipRaw.build?.price?.credits || 0,
+                    metal: shipRaw.build?.price?.metal || 0,
+                    crystal: shipRaw.build?.price?.crystal || 0
+                };
+            } else {
+                return {
+                    name: shipBundle.name,
+                    ai: shipRaw.ai,
+                    aiTarget: shipRaw.ai_attack_target,
+                    accelTime: shipRaw.physics.time_to_max_linear_speed,
+                    speed: shipRaw.physics.max_linear_speed,
+                    weapons: shipRaw.weapons.weapons.map((shipWeapon) => weaponDict[shipWeapon.weapon]),
+                    hull: shipRaw.health.max_hull_points,
+                    shields: shipRaw.health.max_shield_points,
+                    mitigation: shipRaw.health.shield_mitigation,
+                    armor: shipRaw.health.hull_armor,
+                    supply: shipRaw.build?.supply_cost || 0,
+                    credits: shipRaw.build?.price?.credits || 0,
+                    metal: shipRaw.build?.price?.metal || 0,
+                    crystal: shipRaw.build?.price?.crystal || 0
+                };
+            }
         });
 
     
@@ -71,15 +94,18 @@ const load = () => {
 };
 
 const exec = (shipDict) => {
-    const p0 = new Player(shipDict, {
-        trader_light_frigate: 1
-    }, 10000, -1, 'p0', chalk.yellow);
     const p1 = new Player(shipDict, {
+        // trader_light_frigate: 12
+        // trader_long_range_cruiser: 10
+        // trader_heavy_cruiser: 6
+        trader_battle_capital_ship: 1
+    }, 10000, -1, 'Player1', chalk.yellow);
+    const p2 = new Player(shipDict, {
         trader_long_range_cruiser: 1
-    }, -10000, 1, 'p1', chalk.magentaBright);
+    }, -10000, 1, 'Player2', chalk.magentaBright);
     
     const simDuration = 600;// n seconds
-    const simInterval = 1;// Tick every n ms
+    const simInterval = 100;// Tick every n ms
     const ticksPerSecond = Math.floor(1000 / simInterval);
     const simTicks = simDuration * 1000 / simInterval;
     
@@ -87,20 +113,20 @@ const exec = (shipDict) => {
     for (let i = 0; i < simTicks; i++) {
         if (i % (10 * ticksPerSecond) === 0) bold(`Tick [${i}/${simTicks}] (${i * simInterval / 1000 }s)`);
 
-        p0.fleet.forEach(ship => ship.act(p1.fleet, simInterval));
-        p1.fleet.forEach(ship => ship.act(p0.fleet, simInterval));
+        p1.fleet.forEach(ship => ship.act(p2.fleet, simInterval));
+        p2.fleet.forEach(ship => ship.act(p1.fleet, simInterval));
 
-        p0.fleet = p0.fleet.filter(ship => !ship.isDead);
         p1.fleet = p1.fleet.filter(ship => !ship.isDead);
+        p2.fleet = p2.fleet.filter(ship => !ship.isDead);
 
-        if (p0.fleet.every(ship => ship.isDead)) {
-            green('Player 1 Wins after ' + (i * simInterval / 1000 ) + 's');
-            p1.fleet.forEach(survivor => survivor.printHealth(1));
+        if (p1.fleet.every(ship => ship.isDead)) {
+            green('Player 2 Wins after ' + (i * simInterval / 1000 ) + 's');
+            p2.fleet.forEach(survivor => survivor.printHealth(1));
             break;
         }
-        if (p1.fleet.every(ship => ship.isDead)) {
-            green('Player 0 Wins after ' + (i * simInterval / 1000 ) + 's');
-            p0.fleet.forEach(survivor => survivor.printHealth(1));
+        if (p2.fleet.every(ship => ship.isDead)) {
+            green('Player 1 Wins after ' + (i * simInterval / 1000 ) + 's');
+            p1.fleet.forEach(survivor => survivor.printHealth(1));
             break;
         }
     }
@@ -119,15 +145,15 @@ const exec = (shipDict) => {
         ['PPS'],
         ['PPR']
     ];
-    const r0 = p0.getResults();
     const r1 = p1.getResults();
+    const r2 = p2.getResults();
     const compile = (results) => {
         Object.keys(results).forEach((key, i) => {
-            table[i + 1].push(Math.round(results[key] * 100) / 100);
+            table[i].push(isNaN(results[key]) ? results[key] : Math.round(results[key] * 100) / 100);
         });
     };
-    compile(r0);
     compile(r1);
+    compile(r2);
     console.table(table);
 };
 

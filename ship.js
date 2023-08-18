@@ -91,13 +91,31 @@ export class Ship {
         return this.weapons.every(weapon => this.weaponInRange(weapon, target));
     }
 
+    shuffle(arr) {
+        let currentIndex = arr.length;
+        let randomIndex;
+
+        // While there remain elements to shuffle.
+        while (currentIndex != 0) {
+            // Pick a remaining element.
+            randomIndex = Math.floor(Math.random() * currentIndex);
+            currentIndex--;
+        
+            // And swap it with the current element.
+            [arr[currentIndex], arr[randomIndex]] = [arr[randomIndex], arr[currentIndex]];
+        }
+      
+        return arr;
+    }
+
     /**
      * Selects the next target from the hostile fleet
      * @param {[Ship]} hostileFleet 
      */
     selectTarget(hostileFleet) {
         // First, attempt to find a target in range
-        const targetsInRange = hostileFleet.filter(enemyShip => this.allWeaponsCanHit(enemyShip));
+        // We shuffle because the arrangement of the rest of the fleet is different for each vessel
+        const targetsInRange = this.shuffle(hostileFleet.filter(enemyShip => this.allWeaponsCanHit(enemyShip)));
 
         // If no target is in range, move to the best new target
         const targetOptions = targetsInRange.length > 0 ? targetsInRange : hostileFleet;
@@ -114,7 +132,7 @@ export class Ship {
             priority += this.getTargetOptionSpecialPriority(opt);
 
             if (priority > this.targetPriority) {
-                this.print(`Prioritizing New Target: ${opt.id} with priority ${priority}`);
+                // this.print(`Prioritizing New Target: ${opt.id} with priority ${priority}`);
                 this.target = opt;
                 this.targetPriority = priority;
             }
@@ -217,7 +235,9 @@ export class Ship {
             const afterArmor = damage / (1 + (0.01 * armorDiff));
             this.hull -= afterArmor;
             if (this.hull < 0) {
-                dealt += this.hull + afterArmor;
+                // Hull is negative here, so we don't want to count overkill damage
+                // If multiple enemies were focused on this ship, clamp dealt floor to 0.
+                dealt += Math.max(0, afterArmor + this.hull);
             } else {
                 dealt += afterArmor;
             }
@@ -225,9 +245,8 @@ export class Ship {
         this.printHealth(1);
         if (this.hull <= 0) {
             this.isDead = true;
-            this.print('DEAD');
+            this.print('DEAD', 2);
         }
-        console.log('Dealt: ' + dealt);
         return dealt;
     }
 
