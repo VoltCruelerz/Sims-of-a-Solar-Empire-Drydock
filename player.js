@@ -23,9 +23,40 @@ export class Player {
                 return;
             }
             for (let i = 0; i < count; i++) {
-                const shipId = `${id}_${key}_${i}`;
+                const shipId = `${id}[${key}][${i}]`;
                 this.fleet.push(new Ship(shipConfig, startingPosition, direction, shipId, factionColor));
             }
+
+            // Create a shallow copy so we can track performance after the fact.
+            this.originalFleet = this.fleet.map(ship => ship);
         });
+    }
+
+    getResults() {
+        const sum = (arr) => arr.reduce((sum, item) => sum + item, 0);
+        const dealt = sum(this.originalFleet.map(p => p.dealt));
+        const tanked = sum(this.originalFleet.map(p => p.tanked));
+        const supply = sum(this.originalFleet.map(p => p.supply));
+        const credits = sum(this.originalFleet.map(p => p.credits));
+        const metal = sum(this.originalFleet.map(p => p.metal));
+        const crystal = sum(this.originalFleet.map(p => p.crystal));
+        const performance = dealt + tanked;
+        const resources = credits + metal + crystal;
+
+        const pps = performance / supply;
+        const ppr = performance / resources;
+
+        return {
+            dealt,
+            tanked,
+            performance,
+            supply,
+            credits,
+            metal,
+            crystal,
+            resources,
+            pps,
+            ppr
+        };
     }
 }

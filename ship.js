@@ -33,6 +33,8 @@ export class Ship {
         this.direction = direction;
         this.id = id;
         this.factionColor = factionColor;
+        this.tanked = 0;
+        this.dealt = 0;
     }
 
     /**
@@ -176,7 +178,7 @@ export class Ship {
             // The weapon is ready to fire, so check range to target.
             if (this.weaponInRange(weapon)) {
                 this.print('Firing ' + weapon.name);
-                this.target.takeDamage(weapon.damage, weapon.ap);
+                this.dealt += this.target.takeDamage(weapon.damage, weapon.ap);
                 weapon.cooldownRemaining += weapon.cooldown * 1000;
             }
         } else {
@@ -190,11 +192,19 @@ export class Ship {
      * Deals damage to the ship
      * @param {number} damage 
      * @param {number} piercing 
+     * @returns {number} the actual damage dealt, across both shields and hull, after mitigation and armor
      */
     takeDamage(damage, piercing) {
+        this.tanked += damage;
+        let dealt = 0;
         if (this.shields > 0) {
             damage -= this.mitigation;
             damage = Math.max(0, damage);
+            if (damage > this.shields) {
+                dealt += this.shields;
+            } else {
+                dealt += damage;
+            }
             this.shields -= damage;
             damage = 0;
         }
@@ -206,12 +216,19 @@ export class Ship {
             const armorDiff = Math.max(0, this.armor - piercing);
             const afterArmor = damage / (1 + (0.01 * armorDiff));
             this.hull -= afterArmor;
+            if (this.hull < 0) {
+                dealt += this.hull + afterArmor;
+            } else {
+                dealt += afterArmor;
+            }
         }
         this.printHealth(1);
         if (this.hull <= 0) {
             this.isDead = true;
             this.print('DEAD');
         }
+        console.log('Dealt: ' + dealt);
+        return dealt;
     }
 
     printHealth(depth = 0) {

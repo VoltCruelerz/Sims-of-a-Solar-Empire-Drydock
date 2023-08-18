@@ -82,8 +82,10 @@ const exec = (shipDict) => {
     const simInterval = 1;// Tick every n ms
     const ticksPerSecond = Math.floor(1000 / simInterval);
     const simTicks = simDuration * 1000 / simInterval;
+    
+    // Run simulation
     for (let i = 0; i < simTicks; i++) {
-        if (i % (10 * ticksPerSecond) === 0) bold(`Tick [${i}/${simTicks}] = ${i * simInterval / 1000 }s`);
+        if (i % (10 * ticksPerSecond) === 0) bold(`Tick [${i}/${simTicks}] (${i * simInterval / 1000 }s)`);
 
         p0.fleet.forEach(ship => ship.act(p1.fleet, simInterval));
         p1.fleet.forEach(ship => ship.act(p0.fleet, simInterval));
@@ -102,6 +104,31 @@ const exec = (shipDict) => {
             break;
         }
     }
+
+    // Compile results
+    const table = [
+        ['Player'],
+        ['Dealt'],
+        ['Tanked'],
+        ['Performance'],
+        ['Supply'],
+        ['Credits'],
+        ['Metal'],
+        ['Crystal'],
+        ['Resources'],
+        ['PPS'],
+        ['PPR']
+    ];
+    const r0 = p0.getResults();
+    const r1 = p1.getResults();
+    const compile = (results) => {
+        Object.keys(results).forEach((key, i) => {
+            table[i + 1].push(Math.round(results[key] * 100) / 100);
+        });
+    };
+    compile(r0);
+    compile(r1);
+    console.table(table);
 };
 
 green('Loading Data...');
