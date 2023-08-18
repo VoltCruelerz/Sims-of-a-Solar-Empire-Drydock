@@ -1,0 +1,19 @@
+{
+  "name": "sims-of-a-solar-empire",
+  "version": "1.0.0",
+  "description": "A testing ground for AI priorities and balance changes.",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "soase"
+  ],
+  "author": "Volt Cruelerz",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "4.1.2",
+    "fs": "^0.0.1-security"
+  }
+}
