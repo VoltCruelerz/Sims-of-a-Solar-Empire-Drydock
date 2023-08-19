@@ -234,7 +234,7 @@ export class Ship {
     fire(weapon, tickInterval, i, alliedFleet) {
         if (weapon.cooldownRemaining <= 0) {
             // The weapon is ready to fire, so check range to target.
-            if (this.weaponInRange(weapon)) {
+            if (weapon.target && this.weaponInRange(weapon)) {
                 this.print(`Firing [${i}]: ${weapon.name}`);
 
                 // For missiles and torpedoes, we need to spawn a missile.

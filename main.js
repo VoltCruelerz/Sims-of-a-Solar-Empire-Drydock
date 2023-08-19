@@ -149,7 +149,8 @@ const sleep = (ms) => {
 
 const exec = async (shipDict) => {
     const p1 = new Player(shipDict, {
-        trader_light_frigate: 1
+        // trader_light_frigate: 1
+        trader_antifighter_frigate: 1
         // trader_long_range_cruiser: 1
         // trader_heavy_cruiser: 6
         // trader_battle_capital_ship: 1
