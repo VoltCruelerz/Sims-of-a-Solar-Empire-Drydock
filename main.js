@@ -12,10 +12,40 @@ const bold = str => console.log(chalk.bold(str));
 
 const entitiesPath = 'E:/Epic Games/SinsII/entities';
 
-const weaponFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.weapon') && p.startsWith('trader_'));
-const unitFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.unit') && p.startsWith('trader_'));
 
 const load = () => {
+    const unitFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.unit') && p.startsWith('trader_'));
+    const units = unitFiles.map(unitFile => {
+        return {
+            name: unitFile,
+            obj: JSON.parse(fs.readFileSync(entitiesPath + '/' + unitFile))
+        };
+    });
+
+    // Load in torpedo types
+    const unitSuffixLength = '.unit'.length;
+    const torpedoes = units.filter(p => p.name.includes('torpedo')).map(torpedoRaw => {
+        return {
+            name: torpedoRaw.name,
+            ai: torpedoRaw.obj.ai,
+            aiTarget: torpedoRaw.obj.ai_attack_target,
+            speed: torpedoRaw.obj.physics.max_linear_speed,
+            hull: torpedoRaw.obj.health.max_hull_points || 0,
+            shields: torpedoRaw.obj.health.max_shield_points || 0,
+            mitigation: torpedoRaw.obj.health.shield_mitigation || 0,
+            armor: torpedoRaw.obj.health.hull_armor || 0,
+            type: torpedoRaw.target_filter_unit_type,
+            weapons: []// To be filled out when spawned
+        };
+    });
+    const torpedoDict = torpedoes.reduce((acc, torpedo) => {
+        const key = torpedo.name.substring(0, torpedo.name.length - unitSuffixLength);
+        acc[key] = torpedo;
+        return acc;
+    }, {});
+
+    // Load in weapon types
+    const weaponFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.weapon') && p.startsWith('trader_'));
     const weaponSuffixLength = '.weapon'.length;
     const weapons = weaponFiles.map(weaponFile => {
         const weaponPath = entitiesPath + '/' + weaponFile;
@@ -57,7 +87,9 @@ const load = () => {
             damage: rawWeapon.damage,
             type: rawWeapon.weapon_type,
             logic: rawWeapon.acquire_target_logic,
-            targetFilter
+            targetFilter,
+            salvoSize: rawWeapon.burst_pattern?.length || 1,
+            torpedo: torpedoDict[rawWeapon.firing?.torpedo_firing_definition?.spawned_unit]
         };
     });
     const weaponDict = weapons.reduce((acc, weapon) => {
@@ -65,12 +97,8 @@ const load = () => {
         return acc;
     }, {});
     
-    const shipTypes = unitFiles.map(unitFile => {
-            return {
-                name: unitFile,
-                obj: JSON.parse(fs.readFileSync(entitiesPath + '/' + unitFile))
-            };
-        })
+    // Load in ship types
+    const shipTypes = units
         .filter(p => p.obj.physics && p.obj.weapons?.weapons)
         .map(shipBundle => {
             const shipRaw = shipBundle.obj;
@@ -84,10 +112,10 @@ const load = () => {
                 weapons: shipRaw.weapons.weapons
                     .map((shipWeapon) => weaponDict[shipWeapon.weapon])
                     .filter(weapon => weapon.type !== 'planet_bombing'),
-                hull: shipRaw.health.max_hull_points,
-                shields: shipRaw.health.max_shield_points,
-                mitigation: shipRaw.health.shield_mitigation,
-                armor: shipRaw.health.hull_armor,
+                hull: shipRaw.health.max_hull_points || 0,
+                shields: shipRaw.health.max_shield_points || 0,
+                mitigation: shipRaw.health.shield_mitigation || 0,
+                armor: shipRaw.health.hull_armor || 0,
                 supply: shipRaw.build?.supply_cost || 0,
                 credits: shipRaw.build?.price?.credits || 0,
                 metal: shipRaw.build?.price?.metal || 0,
@@ -105,9 +133,6 @@ const load = () => {
             }
             return shipObj;
         });
-
-    
-    const unitSuffixLength = '.unit'.length;
     const shipDict = shipTypes.reduce((acc, ship) => {
         const key = ship.name.substring(0, ship.name.length - unitSuffixLength);
         acc[key] = ship;
@@ -116,16 +141,22 @@ const load = () => {
     return shipDict;
 };
 
-const exec = (shipDict) => {
+const sleep = (ms) => {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+};
+
+const exec = async (shipDict) => {
     const p1 = new Player(shipDict, {
-        // trader_light_frigate: 12
-        // trader_long_range_cruiser: 10
+        trader_light_frigate: 1
+        // trader_long_range_cruiser: 1
         // trader_heavy_cruiser: 6
-        trader_battle_capital_ship: 1
+        // trader_battle_capital_ship: 1
     }, 10000, -1, 'Player1', chalk.yellow);
     const p2 = new Player(shipDict, {
         // trader_light_frigate: 24
-        trader_long_range_cruiser: 5
+        trader_long_range_cruiser: 1
     }, -10000, 1, 'Player2', chalk.magentaBright);
     
     const simDuration = 600;// n seconds
@@ -135,10 +166,10 @@ const exec = (shipDict) => {
     
     // Run simulation
     for (let i = 0; i < simTicks; i++) {
-        if (i % (10 * ticksPerSecond) === 0) bold(`Tick [${i}/${simTicks}] (${i * simInterval / 1000 }s)`);
+        if (i % (ticksPerSecond) === 0) bold(`Tick [${i}/${simTicks}] (${i * simInterval / 1000 }s)`);
 
-        p1.fleet.forEach(ship => ship.act(p2.fleet, simInterval));
-        p2.fleet.forEach(ship => ship.act(p1.fleet, simInterval));
+        p1.fleet.forEach(ship => ship.act(p1.fleet, p2.fleet, simInterval));
+        p2.fleet.forEach(ship => ship.act(p2.fleet, p1.fleet, simInterval));
 
         p1.fleet = p1.fleet.filter(ship => !ship.isDead);
         p2.fleet = p2.fleet.filter(ship => !ship.isDead);
@@ -153,6 +184,10 @@ const exec = (shipDict) => {
             p1.fleet.forEach(survivor => survivor.printHealth(1));
             break;
         }
+
+        // Run simulation at a speedup.
+        const speedup = 2;
+        await sleep(simInterval / speedup);
     }
 
     // Compile results

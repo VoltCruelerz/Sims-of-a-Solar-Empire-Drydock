@@ -39,13 +39,14 @@ export class Ship {
 
     /**
      * Take its turn
+     * @param {[Ship]} alliedFleet 
      * @param {[Ship]} enemyFleet 
      * @param {number} tickInterval 
      */
-    act(enemyFleet, tickInterval) {
+    act(alliedFleet, enemyFleet, tickInterval) {
         this.selectTarget(enemyFleet);
         this.moveToTarget(tickInterval);
-        this.attack(tickInterval);
+        this.attack(tickInterval, alliedFleet);
     }
 
     /**
@@ -173,7 +174,6 @@ export class Ship {
                 this.targetPriority = weapon.targetPriority;
             }
         });
-
     }
 
     getTargetOptionSpecialPriority(targetOption) {
@@ -212,9 +212,10 @@ export class Ship {
     /**
      * This ship attacks its target
      * @param {number} tickInterval 
+     * @param {[Ship]} alliedFleet 
      */
-    attack(tickInterval) {
-        this.weapons.forEach((weapon, i) => this.fire(weapon, tickInterval, i));
+    attack(tickInterval, alliedFleet) {
+        this.weapons.forEach((weapon, i) => this.fire(weapon, tickInterval, i, alliedFleet));
     }
 
     /**
@@ -226,14 +227,32 @@ export class Ship {
      * ap: number,
      * cooldownRemaining: number
      * }} weapon The weapon to attempt to fire or reload
-     * @param {number} tickInterval 
+    * @param {number} tickInterval 
+     * @param {number} i The index of the weapon on the ship 
+     * @param {[Ship]} alliedFleet 
      */
-    fire(weapon, tickInterval, i) {
+    fire(weapon, tickInterval, i, alliedFleet) {
         if (weapon.cooldownRemaining <= 0) {
             // The weapon is ready to fire, so check range to target.
             if (this.weaponInRange(weapon)) {
                 this.print(`Firing [${i}]: ${weapon.name}`);
-                this.dealt += weapon.target.takeDamage(weapon.damage, weapon.ap);
+
+                // For missiles and torpedoes, we need to spawn a missile.
+                if (weapon.name.endsWith('missile') || weapon.name.endsWith('torpedo')) {
+                    // Technically these should be on a delay, but it makes very little difference since
+                    // it's always lower than PD gun cooldown times.
+                    const dmgPerMissile = weapon.damage / weapon.salvoSize;
+                    for (let j = 0; j < weapon.salvoSize; j++) {
+                        const missile = new Missile(this, weapon.target, dmgPerMissile, weapon.ap, weapon.torpedo);
+                        // We need to spawn missiles at the start of the fleet list.
+                        // Otherwise, it's possible missiles could land without PD
+                        // getting a chance to shoot them down.
+                        alliedFleet.unshift(missile);
+                    }
+                } else {
+                    // Normal weapons play animations repeatedly, but only actually deal a single damage instance.
+                    this.dealt += weapon.target.takeDamage(weapon.damage, weapon.ap);
+                }
                 weapon.cooldownRemaining += weapon.cooldown * 1000;
             }
         } else {
@@ -252,6 +271,8 @@ export class Ship {
     takeDamage(damage, piercing) {
         this.tanked += damage;
         let dealt = 0;
+
+        // Deal damage to shields first
         if (this.shields > 0) {
             damage -= this.mitigation;
             damage = Math.max(0, damage);
@@ -267,6 +288,8 @@ export class Ship {
             damage = -this.shields;
             this.shields = 0;
         }
+
+        // If damage remains, hit the hull.
         if (damage > 0) {
             const armorDiff = Math.max(0, this.armor - piercing);
             const afterArmor = damage / (1 + (0.01 * armorDiff));
@@ -295,5 +318,46 @@ export class Ship {
         str = `- ${this.factionColor(this.id)}: ${str}`;
         str = str.padStart(str.length + 4 * depth, ' ');
         console.log(str);
+    }
+}
+
+
+class Missile extends Ship {
+    /**
+     * Creates a missile
+     * @param {Ship} spawner 
+     * @param {Ship} target 
+     * @param {number} damage 
+     * @param {number} piercing 
+     * @param {{hull: number, speed: number}} config 
+     */
+    constructor(spawner, target, damage, piercing, config) {
+        super(config, spawner.position, spawner.direction, spawner.id + '_Missile', spawner.factionColor);
+        this.spawner = spawner;
+        this.target = target;
+        this.type = 'torpedo';
+        this.weapons.push({
+            range: 0,
+            damage,
+            target,
+            ap: piercing
+        });
+    }
+
+    /**
+     * Missiles "fire" when they hit their target.
+     * @param {{target: Ship, damage: number, ap: number}} weapon 
+     * @param {*} _tickInterval 
+     * @param {*} _i 
+     * @param {*} _alliedFleet 
+     */
+    fire(weapon, _tickInterval, _i, _alliedFleet) {
+        this.print('DETONATE for ' + weapon.damage);
+        this.spawner.dealt += weapon.target.takeDamage(weapon.damage, weapon.ap);
+        this.isDead = true;
+    }
+
+    selectTarget(_hostileFleet) {
+        // Do nothing. Weapons cannot acquire new targets.
     }
 }
