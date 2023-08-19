@@ -79,7 +79,7 @@ export class Ship {
      * @param {Ship} target 
      * @returns {boolean}
      */
-    weaponInRange(weapon, target = this.target) {
+    weaponInRange(weapon, target = weapon.target) {
         return weapon.range >= this.getDistanceToTarget(target);
     }
 
@@ -87,8 +87,11 @@ export class Ship {
      * Checks if all onboard weapons can hit the target.
      * @returns {boolean}
      */
-    allWeaponsCanHit(target = this.target) {
-        return this.weapons.every(weapon => this.weaponInRange(weapon, target));
+    allWeaponsCanHit(target) {
+        // If a secondary weapon doesn't have a weapon, ignore it.
+        return this.weapons
+            .filter(weapon => weapon.target)
+            .every(weapon => this.weaponInRange(weapon, target));
     }
 
     shuffle(arr) {
@@ -110,33 +113,67 @@ export class Ship {
 
     /**
      * Selects the next target from the hostile fleet
+     * 
+     * There are three target logic options available for weapons:
+     * 1. best_target_in_range
+     * 2. order_target_only
+     * 3. order_target_or_best_target_in_range
+     * 
+     * For our purposes the "order target" will be the primary weapon's target.
+     * #2 will NOT be able to target the same ship.
+     * #3 can, but won't necessarily.
+     * 
      * @param {[Ship]} hostileFleet 
      */
     selectTarget(hostileFleet) {
-        // First, attempt to find a target in range
-        // We shuffle because the arrangement of the rest of the fleet is different for each vessel
-        const targetsInRange = this.shuffle(hostileFleet.filter(enemyShip => this.allWeaponsCanHit(enemyShip)));
+        this.weapons.forEach((weapon, i) => {
+            // First, attempt to find a target in range
+            const targetsInRange = hostileFleet.filter(enemyShip => this.weaponInRange(weapon, enemyShip));
 
-        // If no target is in range, move to the best new target
-        const targetOptions = targetsInRange.length > 0 ? targetsInRange : hostileFleet;
+            // If no target is in range, default to the fleet as a whole.
+            const targetOptions = targetsInRange.length > 0
+                ? targetsInRange
+                : hostileFleet;
 
-        // Choose a target from among those listed, defaulting to the previous target.
-        this.target = !this.target || this.target.isDead
-            ? null
-            : this.target;
-        this.targetPriority = !this.target || this.target.isDead
-            ? Number.MIN_SAFE_INTEGER
-            : this.targetPriority;
-        targetOptions.forEach((opt) => {
-            let priority = opt.aiTarget.attack_priority;
-            priority += this.getTargetOptionSpecialPriority(opt);
+            // If the weapon MUST fire on the primary target, just copy it.
+            if (weapon.logic === 'order_target_only' && i !== 0) {
+                weapon.target = this.weapons[0];
+            }
 
-            if (priority > this.targetPriority) {
-                // this.print(`Prioritizing New Target: ${opt.id} with priority ${priority}`);
-                this.target = opt;
-                this.targetPriority = priority;
+            // Shuffle a clone of the list so that different weapons can select different targets.
+            let weaponTargetOptions = this.shuffle([...targetOptions]);
+
+            // If the weapon must NOT target the primary target, remove the primary target from the list.
+            if (weapon.logic === 'best_target_in_range') {
+                weaponTargetOptions = weaponTargetOptions.filter(option => option !== this.target);
+            }
+
+            // Choose a target from among those listed, defaulting to the previous target.
+            weapon.target = !weapon.target || weapon.target.isDead
+                ? null
+                : weapon.target;
+            weapon.targetPriority = !weapon.target || weapon.target.isDead
+                ? Number.MIN_SAFE_INTEGER
+                : weapon.targetPriority;
+            
+            weaponTargetOptions.forEach((opt) => {
+                let priority = opt.aiTarget.attack_priority;
+                priority += this.getTargetOptionSpecialPriority(opt);
+    
+                if (priority > weapon.targetPriority) {
+                    this.print(`Weapon[${i}] Prioritizing New Target: ${opt.id} with priority ${priority}`);
+                    weapon.target = opt;
+                    weapon.targetPriority = priority;
+                }
+            });
+
+            // If this is the primary gun, mark the overall ship's targeting.
+            if (i === 0) {
+                this.target = weapon.target;
+                this.targetPriority = weapon.targetPriority;
             }
         });
+
     }
 
     getTargetOptionSpecialPriority(targetOption) {
@@ -162,7 +199,7 @@ export class Ship {
      */
     moveToTarget(tickInterval) {
         const tickDistance = this.speed * tickInterval / 1000;
-        if (!this.allWeaponsCanHit()) {
+        if (!this.allWeaponsCanHit(this.target)) {
             if (this.getDistanceToTarget() < this.speed) {
                 this.position = this.position + (this.getDistanceToTarget() * this.direction);
             } else {
@@ -177,7 +214,7 @@ export class Ship {
      * @param {number} tickInterval 
      */
     attack(tickInterval) {
-        this.weapons.forEach(weapon => this.fire(weapon, tickInterval));
+        this.weapons.forEach((weapon, i) => this.fire(weapon, tickInterval, i));
     }
 
     /**
@@ -191,12 +228,12 @@ export class Ship {
      * }} weapon The weapon to attempt to fire or reload
      * @param {number} tickInterval 
      */
-    fire(weapon, tickInterval) {
+    fire(weapon, tickInterval, i) {
         if (weapon.cooldownRemaining <= 0) {
             // The weapon is ready to fire, so check range to target.
             if (this.weaponInRange(weapon)) {
-                this.print('Firing ' + weapon.name);
-                this.dealt += this.target.takeDamage(weapon.damage, weapon.ap);
+                this.print(`Firing [${i}]: ${weapon.name}`);
+                this.dealt += weapon.target.takeDamage(weapon.damage, weapon.ap);
                 weapon.cooldownRemaining += weapon.cooldown * 1000;
             }
         } else {

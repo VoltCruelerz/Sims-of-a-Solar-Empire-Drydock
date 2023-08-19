@@ -20,13 +20,44 @@ const load = () => {
     const weapons = weaponFiles.map(weaponFile => {
         const weaponPath = entitiesPath + '/' + weaponFile;
         const rawWeapon = JSON.parse(fs.readFileSync(weaponPath));
+        const filter = rawWeapon.uniforms_target_filter_id;
+        let targetFilter;
+
+        switch (filter) {
+            case 'common_weapon':
+                targetFilter = ['corvette', 'frigate', 'capital_ship', 'structure', 'titan'];
+                break;
+            case 'common_weapon_no_corvette_weapon':
+                targetFilter = ['frigate', 'capital_ship', 'structure', 'titan'];
+                break;
+            case 'strikecraft_and_torpedo_weapon':
+                targetFilter = ['strikecraft', 'torpedo'];
+                break;
+            case 'common_and_strikecraft_and_torpedo_weapon':
+                targetFilter = ['strikecraft', 'torpedo', 'corvette', 'frigate', 'capital_ship', 'structure', 'titan'];
+                break;
+            case 'common_and_strikecraft_weapon':
+                targetFilter = ['strikecraft', 'corvette', 'frigate', 'capital_ship', 'structure', 'titan'];
+                break;
+            case 'planet_bombing':
+                targetFilter = ['planet', 'corvette', 'frigate', 'capital_ship', 'structure', 'titan'];
+                break;
+            case 'common_planet_bombing':
+                targetFilter = ['planet'];
+                break;
+            default:
+                throw new Error('Unrecognized Type: ' + filter + ' on weapon ' + weaponFile);
+        }
+
         return {
             name: weaponFile.substring(0, weaponFile.length - weaponSuffixLength),
             cooldown: rawWeapon.cooldown_duration,
             range: rawWeapon.range,
             ap: rawWeapon.hull_armor_penetration,
             damage: rawWeapon.damage,
-            type: rawWeapon.weapon_type
+            type: rawWeapon.weapon_type,
+            logic: rawWeapon.acquire_target_logic,
+            targetFilter
         };
     });
     const weaponDict = weapons.reduce((acc, weapon) => {
@@ -43,44 +74,36 @@ const load = () => {
         .filter(p => p.obj.physics && p.obj.weapons?.weapons)
         .map(shipBundle => {
             const shipRaw = shipBundle.obj;
+            
+            const shipObj =  {
+                name: shipBundle.name,
+                ai: shipRaw.ai,
+                aiTarget: shipRaw.ai_attack_target,
+                accelTime: shipRaw.physics.time_to_max_linear_speed,
+                speed: shipRaw.physics.max_linear_speed,
+                weapons: shipRaw.weapons.weapons
+                    .map((shipWeapon) => weaponDict[shipWeapon.weapon])
+                    .filter(weapon => weapon.type !== 'planet_bombing'),
+                hull: shipRaw.health.max_hull_points,
+                shields: shipRaw.health.max_shield_points,
+                mitigation: shipRaw.health.shield_mitigation,
+                armor: shipRaw.health.hull_armor,
+                supply: shipRaw.build?.supply_cost || 0,
+                credits: shipRaw.build?.price?.credits || 0,
+                metal: shipRaw.build?.price?.metal || 0,
+                crystal: shipRaw.build?.price?.crystal || 0,
+                type: shipRaw.target_filter_unit_type
+            };
+
+            // If it's a capital or titan, assume Level 1.
             if (shipRaw.levels) {
                 const level1 = shipRaw.levels.levels[0];
-                return {
-                    name: shipBundle.name,
-                    ai: shipRaw.ai,
-                    aiTarget: shipRaw.ai_attack_target,
-                    accelTime: shipRaw.physics.time_to_max_linear_speed,
-                    speed: shipRaw.physics.max_linear_speed,
-                    weapons: shipRaw.weapons.weapons
-                        .map((shipWeapon) => weaponDict[shipWeapon.weapon])
-                        .filter(weapon => weapon.type !== 'planet_bombing'),
-                    hull: level1.unit_modifiers.additive_values.max_hull_points,
-                    shields: level1.unit_modifiers.additive_values.max_shield_points,
-                    mitigation: level1.unit_modifiers.additive_values.shield_mitigation,
-                    armor: level1.unit_modifiers.additive_values.hull_armor,
-                    supply: shipRaw.build?.supply_cost || 0,
-                    credits: shipRaw.build?.price?.credits || 0,
-                    metal: shipRaw.build?.price?.metal || 0,
-                    crystal: shipRaw.build?.price?.crystal || 0
-                };
-            } else {
-                return {
-                    name: shipBundle.name,
-                    ai: shipRaw.ai,
-                    aiTarget: shipRaw.ai_attack_target,
-                    accelTime: shipRaw.physics.time_to_max_linear_speed,
-                    speed: shipRaw.physics.max_linear_speed,
-                    weapons: shipRaw.weapons.weapons.map((shipWeapon) => weaponDict[shipWeapon.weapon]),
-                    hull: shipRaw.health.max_hull_points,
-                    shields: shipRaw.health.max_shield_points,
-                    mitigation: shipRaw.health.shield_mitigation,
-                    armor: shipRaw.health.hull_armor,
-                    supply: shipRaw.build?.supply_cost || 0,
-                    credits: shipRaw.build?.price?.credits || 0,
-                    metal: shipRaw.build?.price?.metal || 0,
-                    crystal: shipRaw.build?.price?.crystal || 0
-                };
+                shipObj.hull = level1.unit_modifiers.additive_values.max_hull_points;
+                shipObj.shields = level1.unit_modifiers.additive_values.max_shield_points;
+                shipObj.mitigation = level1.unit_modifiers.additive_values.shield_mitigation;
+                shipObj.armor = level1.unit_modifiers.additive_values.hull_armor;
             }
+            return shipObj;
         });
 
     
@@ -101,7 +124,8 @@ const exec = (shipDict) => {
         trader_battle_capital_ship: 1
     }, 10000, -1, 'Player1', chalk.yellow);
     const p2 = new Player(shipDict, {
-        trader_long_range_cruiser: 1
+        // trader_light_frigate: 24
+        trader_long_range_cruiser: 5
     }, -10000, 1, 'Player2', chalk.magentaBright);
     
     const simDuration = 600;// n seconds
