@@ -1,3 +1,5 @@
+let missileId = 0;
+
 export class Ship {
     /**
      * Creates a ship
@@ -28,13 +30,28 @@ export class Ship {
         });
         this.maxShields = this.shields;
         this.maxHull = this.hull;
+        this.lifetime = 0;
         this.isDead = false;
+        this.startingPosition = position;
         this.position = position;
         this.direction = direction;
         this.id = id;
         this.factionColor = factionColor;
         this.tanked = 0;
         this.dealt = 0;
+    }
+
+    reset() {
+        this.hull = this.maxHull;
+        this.shields = this.maxShields;
+        this.lifetime = 0;
+        this.isDead = false;
+        this.position = this.startingPosition;
+        this.weapons.forEach(weapon => {
+            weapon.target = null;
+            weapon.cooldownRemaining = 0;
+        });
+        this.target = null;
     }
 
     /**
@@ -44,11 +61,21 @@ export class Ship {
      * @param {number} tickInterval 
      */
     act(alliedFleet, enemyFleet, tickInterval) {
-        this.selectTarget(enemyFleet);
-        this.moveToTarget(tickInterval);
+        this.lifetime++;
+        if (this instanceof Missile || this.selectTarget(enemyFleet)) {
+            this.moveToTarget(tickInterval);
+        } else {
+            this.print('No primary target. Do not move.');
+        }
+
+        // We might still want to attack even if there's no primary target
+        // eg the Sova is swarmed by enemy SC with no other foes; the main
+        // guns would have no target, but its PD guns would still need to
+        // fire.
         this.attack(tickInterval, alliedFleet);
     }
 
+    // #region Targeting
     /**
      * Gets the maximum range of this ship's weapons.
      * @returns {number}
@@ -88,11 +115,11 @@ export class Ship {
      * Checks if all onboard weapons can hit the target.
      * @returns {boolean}
      */
-    allWeaponsCanHit(target) {
+    allWeaponsCanHit() {
         // If a secondary weapon doesn't have a weapon, ignore it.
         return this.weapons
             .filter(weapon => weapon.target)
-            .every(weapon => this.weaponInRange(weapon, target));
+            .every((weapon) => this.weaponInRange(weapon, this.target || weapon.target));
     }
 
     shuffle(arr) {
@@ -128,13 +155,19 @@ export class Ship {
      */
     selectTarget(hostileFleet) {
         this.weapons.forEach((weapon, i) => {
-            // First, attempt to find a target in range
-            const targetsInRange = hostileFleet.filter(enemyShip => this.weaponInRange(weapon, enemyShip));
+            // First, narrow the selection to the things this weapon can fire upon.
+            const possibleTargets = hostileFleet
+                .filter(enemyShip => weapon.targetFilter.includes(enemyShip.type) && !enemyShip.isDead);
+
+            // Second, attempt to narrow to one that's already in range.
+            const validTargetsInRange = possibleTargets
+                .filter(enemyShip => this.weaponInRange(weapon, enemyShip));
+            // this.print(`- Weapon[${i}]: ${validTargetsInRange.length} targets in range among ${possibleTargets.length} valid targets among a fleet of ${hostileFleet.length}.`);
 
             // If no target is in range, default to the fleet as a whole.
-            const targetOptions = targetsInRange.length > 0
-                ? targetsInRange
-                : hostileFleet;
+            const targetOptions = validTargetsInRange.length > 0
+                ? validTargetsInRange
+                : possibleTargets;
 
             // If the weapon MUST fire on the primary target, just copy it.
             if (weapon.logic === 'order_target_only' && i !== 0) {
@@ -162,18 +195,19 @@ export class Ship {
                 priority += this.getTargetOptionSpecialPriority(opt);
     
                 if (priority > weapon.targetPriority) {
-                    this.print(`Weapon[${i}] Prioritizing New Target: ${opt.id} with priority ${priority}`);
+                    // this.print(`- - Prioritizing New Target: ${opt.id} with priority ${priority}`);
                     weapon.target = opt;
                     weapon.targetPriority = priority;
                 }
             });
 
-            // If this is the primary gun, mark the overall ship's targeting.
+            // If this is the primary gun or there is no target, mark the overall ship's targeting.
             if (i === 0) {
                 this.target = weapon.target;
                 this.targetPriority = weapon.targetPriority;
             }
         });
+        return this.target;
     }
 
     getTargetOptionSpecialPriority(targetOption) {
@@ -192,23 +226,45 @@ export class Ship {
     setTarget(targetShip) {
         this.target = targetShip;
     }
+    // #endregion
 
+    // #region Movement
     /**
      * Moves toward a target ship until we're in range.
      * @param {number} tickInterval - The number of ms to simulate passing.
      */
     moveToTarget(tickInterval) {
-        const tickDistance = this.speed * tickInterval / 1000;
-        if (!this.allWeaponsCanHit(this.target)) {
-            if (this.getDistanceToTarget() < this.speed) {
+        const distancePerMs = this.getVelocity(tickInterval) / 1000;
+        const tickDistance = distancePerMs * tickInterval;
+        if (!this.allWeaponsCanHit()) {
+            if (this.getDistanceToTarget() < tickDistance) {
                 this.position = this.position + (this.getDistanceToTarget() * this.direction);
             } else {
-                this.position = this.position + (this.speed * this.direction);
+                this.position = this.position + (tickDistance * this.direction);
             }
             this.print('Moved to ' + this.position);
         }
     }
 
+    /**
+     * Updates and returns the velocity in units per second, NOT per tick.
+     * @param {number} tickInterval 
+     * @returns {number} The current distance traveled per second.
+     */
+    getVelocity(tickInterval) {
+        const ticksToAccelerate = Math.floor(1000 * this.accelTime / tickInterval);
+        // Accelerate, if we can
+        if (this.lifetime > ticksToAccelerate) {
+            return this.speed;
+        } else {
+            const velocity = this.speed * (this.lifetime / ticksToAccelerate);
+            this.print("Accelerate to " + Math.round(velocity));
+            return velocity;
+        }
+    }
+    // #endregion
+
+    // #region Attack
     /**
      * This ship attacks its target
      * @param {number} tickInterval 
@@ -235,10 +291,9 @@ export class Ship {
         if (weapon.cooldownRemaining <= 0) {
             // The weapon is ready to fire, so check range to target.
             if (weapon.target && this.weaponInRange(weapon)) {
-                this.print(`Firing [${i}]: ${weapon.name}`);
-
                 // For missiles and torpedoes, we need to spawn a missile.
                 if (weapon.name.endsWith('missile') || weapon.name.endsWith('torpedo')) {
+                    this.print(`Weapon[${i}] Launching Salvo of ${weapon.salvoSize} (${weapon.name})`);
                     // Technically these should be on a delay, but it makes very little difference since
                     // it's always lower than PD gun cooldown times.
                     const dmgPerMissile = weapon.damage / weapon.salvoSize;
@@ -250,6 +305,7 @@ export class Ship {
                         alliedFleet.unshift(missile);
                     }
                 } else {
+                    this.print(`Weapon[${i}] Firing (${weapon.name}) for ${weapon.damage} (ap=${weapon.ap})`);
                     // Normal weapons play animations repeatedly, but only actually deal a single damage instance.
                     this.dealt += weapon.target.takeDamage(weapon.damage, weapon.ap);
                 }
@@ -269,12 +325,12 @@ export class Ship {
      * @returns {number} the actual damage dealt, across both shields and hull, after mitigation and armor
      */
     takeDamage(damage, piercing) {
-        this.tanked += damage;
         let dealt = 0;
 
         // Deal damage to shields first
         if (this.shields > 0) {
             damage -= this.mitigation;
+            this.tanked += this.mitigation;
             damage = Math.max(0, damage);
             if (damage > this.shields) {
                 dealt += this.shields;
@@ -293,6 +349,7 @@ export class Ship {
         if (damage > 0) {
             const armorDiff = Math.max(0, this.armor - piercing);
             const afterArmor = damage / (1 + (0.01 * armorDiff));
+            this.tanked += damage - afterArmor;
             this.hull -= afterArmor;
             if (this.hull < 0) {
                 // Hull is negative here, so we don't want to count overkill damage
@@ -309,15 +366,16 @@ export class Ship {
         }
         return dealt;
     }
+    // #endregion
 
     printHealth(depth = 0) {
-        this.print(`Shields ${this.shields}/${this.maxShields}, Hull ${this.hull}/${this.maxHull}`, depth);
+        this.print(`Shields ${Math.round(this.shields)}/${this.maxShields}, Hull ${Math.round(this.hull)}/${this.maxHull}`, depth);
     }
 
     print(str, depth = 0) {
         str = `- ${this.factionColor(this.id)}: ${str}`;
         str = str.padStart(str.length + 4 * depth, ' ');
-        console.log(str);
+        // console.log(str);
     }
 }
 
@@ -332,7 +390,7 @@ class Missile extends Ship {
      * @param {{hull: number, speed: number}} config 
      */
     constructor(spawner, target, damage, piercing, config) {
-        super(config, spawner.position, spawner.direction, spawner.id + '_Missile', spawner.factionColor);
+        super(config, spawner.position, spawner.direction, `${spawner.id}_Missile[${missileId++}]`, spawner.factionColor);
         this.spawner = spawner;
         this.target = target;
         this.type = 'torpedo';

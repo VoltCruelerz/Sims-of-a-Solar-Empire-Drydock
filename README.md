@@ -1,4 +1,4 @@
-# Sims of a Solar Empire
+# Sims of a Solar Empire: Drydock
 
 _A simulation sandbox for Sins of a Solar Empire II._
 

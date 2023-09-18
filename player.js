@@ -12,6 +12,8 @@ export class Player {
      */
     constructor(shipDict, fleetDefinition, startingPosition, direction, id, factionColor) {
         this.id = id;
+        this.color = factionColor;
+        this.wins = 0;
 
         this.fleet = [];
         const keys = Object.keys(fleetDefinition);
@@ -32,10 +34,15 @@ export class Player {
         });
     }
 
-    getResults() {
+    reset() {
+        this.originalFleet.forEach(ship => ship.reset());
+        this.fleet = this.originalFleet.map(ship => ship);
+    }
+
+    getResults(iterations) {
         const sum = (arr) => arr.reduce((sum, item) => sum + item, 0);
-        const dealt = sum(this.originalFleet.map(p => p.dealt));
-        const tanked = sum(this.originalFleet.map(p => p.tanked));
+        const dealt = Math.round(sum(this.originalFleet.map(p => p.dealt)) / iterations);
+        const tanked = Math.round(sum(this.originalFleet.map(p => p.tanked)) / iterations);
         const supply = sum(this.originalFleet.map(p => p.supply));
         const credits = sum(this.originalFleet.map(p => p.credits));
         const metal = sum(this.originalFleet.map(p => p.metal));
@@ -43,8 +50,8 @@ export class Player {
         const performance = dealt + tanked;
         const resources = credits + metal + crystal;
 
-        const pps = performance / supply;
-        const ppr = performance / resources;
+        const pps = Math.round(100 * performance / supply) / 100;
+        const ppr = Math.round(100 * performance / resources) / 100;
 
         return {
             id: this.id,
