@@ -31,6 +31,7 @@ export class Ship {
         this.maxShields = this.shields;
         this.maxHull = this.hull;
         this.lifetime = 0;
+        this.survived = 0;
         this.isDead = false;
         this.startingPosition = position;
         this.position = position;
@@ -368,14 +369,21 @@ export class Ship {
     }
     // #endregion
 
-    printHealth(depth = 0) {
-        this.print(`Shields ${Math.round(this.shields)}/${this.maxShields}, Hull ${Math.round(this.hull)}/${this.maxHull}`, depth);
+    printHealth(depth = 0, force = false) {
+        this.print(`Shields ${Math.round(this.shields)}/${this.maxShields}, Hull ${Math.round(this.hull)}/${this.maxHull}`, depth, force);
     }
 
-    print(str, depth = 0) {
+    print(str, depth = 0, force = false) {
         str = `- ${this.factionColor(this.id)}: ${str}`;
         str = str.padStart(str.length + 4 * depth, ' ');
-        // console.log(str);
+        if (process.argv.includes('-debug') || force) {
+            console.log(str);
+        }
+    }
+
+    markSurvived() {
+        this.printHealth(1, true);
+        this.survived++;
     }
 }
 

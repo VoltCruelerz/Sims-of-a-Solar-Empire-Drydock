@@ -1,4 +1,5 @@
 import { Ship } from "./ship.js";
+const sum = (arr) => arr.reduce((sum, item) => sum + item, 0);
 
 export class Player {
     /**
@@ -31,6 +32,7 @@ export class Player {
 
             // Create a shallow copy so we can track performance after the fact.
             this.originalFleet = this.fleet.map(ship => ship);
+            this.originalFleetSupply = sum(this.originalFleet.map(s => s.supply));
         });
     }
 
@@ -43,7 +45,12 @@ export class Player {
         const sum = (arr) => arr.reduce((sum, item) => sum + item, 0);
         const dealt = Math.round(sum(this.originalFleet.map(p => p.dealt)) / iterations);
         const tanked = Math.round(sum(this.originalFleet.map(p => p.tanked)) / iterations);
-        const supply = sum(this.originalFleet.map(p => p.supply));
+        const supply = this.originalFleetSupply;
+
+        const shipSurvivalRates = this.originalFleet.map(p => p.supply * p.survived / iterations);
+        const fleetSurvival = sum(shipSurvivalRates) / this.originalFleetSupply;
+        const survival = Math.round(1000 * fleetSurvival) / 10 + '%';
+
         const credits = sum(this.originalFleet.map(p => p.credits));
         const metal = sum(this.originalFleet.map(p => p.metal));
         const crystal = sum(this.originalFleet.map(p => p.crystal));
@@ -59,6 +66,7 @@ export class Player {
             tanked,
             performance,
             supply,
+            survival,
             credits,
             metal,
             crystal,

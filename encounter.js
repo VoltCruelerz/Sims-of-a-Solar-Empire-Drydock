@@ -9,18 +9,24 @@ const yellow = str => console.log(chalk.yellow(str));
 const magenta = str => console.log(chalk.magenta(str));
 const white = str => console.log(chalk.white(str));
 const bold = str => console.log(chalk.bold(str));
+const sum = (arr) => arr.reduce((sum, item) => sum + item, 0);
 
 export class Encounter {
+    // trader_light_frigate: 1,
+    // trader_antifighter_frigate: 1,
+    // trader_long_range_cruiser: 1,
+    // trader_heavy_cruiser: 1,
+    // trader_battle_capital_ship: 1,
     static EarlyBattles = [
-        new Encounter('LF vs LRC (LIVE)',
-        'LF',
-        {
-            trader_light_frigate: 6,
-        },
-        'LRC',
-        {
-            trader_long_range_cruiser: 5,
-        }),
+        // new Encounter('LF vs LRC (LIVE)',
+        // 'LF',
+        // {
+        //     trader_light_frigate: 6,
+        // },
+        // 'LRC',
+        // {
+        //     trader_long_range_cruiser: 5,
+        // }),
         
         // new Encounter('LF vs LRC (TEST)',
         // 'LF',
@@ -40,7 +46,20 @@ export class Encounter {
         // 'Flak',
         // {
         //     trader_npc_antifighter_frigate: 5,
-        // })
+        //     // trader_antifighter_frigate: 5,
+        // }),
+
+        new Encounter('TEC LF vs Vasari LF',
+        'Cobalt',
+        {
+            trader_light_frigate: 70,
+            // trader_light_frigate: 1,
+        },
+        'Ravastra',
+        {
+            vasari_light_frigate: 50,
+            // vasari_light_frigate: 1,
+        })
     ];
 
     /**
@@ -100,15 +119,17 @@ export class Encounter {
 
                 if (p1.fleet.every(ship => ship.isDead)) {
                     console.log(p2.color(this.n2 + ' Wins after ' + (i * simInterval / 1000 ) + 's'));
+                    white(`Survivor Supply: ${sum(p1.fleet.map(s => s.supply))}/${p1.originalFleetSupply}`);
+                    p2.fleet.forEach(survivor => survivor.markSurvived());
                     p2.wins++;
-                    p2.fleet.forEach(survivor => survivor.printHealth(1));
                     totalExecTicks += i;
                     break;
                 }
                 if (p2.fleet.every(ship => ship.isDead)) {
                     console.log(p1.color(this.n1 + ' Wins after ' + (i * simInterval / 1000 ) + 's'));
+                    white(`Survivor Supply: ${sum(p1.fleet.map(s => s.supply))}/${p1.originalFleetSupply}`);
+                    p1.fleet.forEach(survivor => survivor.markSurvived());
                     p1.wins++;
-                    p1.fleet.forEach(survivor => survivor.printHealth(1));
                     totalExecTicks += i;
                     break;
                 }
@@ -132,6 +153,7 @@ export class Encounter {
             ['Tanked'],
             ['Performance'],
             ['Supply'],
+            ['Fleet Survival'],
             ['Credits'],
             ['Metal'],
             ['Crystal'],

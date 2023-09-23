@@ -39,7 +39,7 @@ const loadUnits = (entitiesPath) => {
         yellow('Warning: directory ' + entitiesPath + ' does not exist');
         return {};
     }
-    const unitFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.unit') && p.startsWith('trader_'));
+    const unitFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.unit') && (p.startsWith('trader_') || p.startsWith('vasari_')));
     return unitFiles.reduce((acc, unitFile) => {
         acc[unitFile] = JSON.parse(fs.readFileSync(entitiesPath + '/' + unitFile))
         return acc;
@@ -102,7 +102,7 @@ const loadWeapons = (entitiesPath, torpedoDict) => {
     }
 
     // Load in weapon types
-    const weaponFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.weapon') && p.startsWith('trader_'));
+    const weaponFiles = fs.readdirSync(entitiesPath).filter(p => p.endsWith('.weapon') && (p.startsWith('trader_') || p.startsWith('vasari_')));
     const weapons = weaponFiles.map(weaponFile => {
         const weaponPath = entitiesPath + '/' + weaponFile;
         const rawWeapon = JSON.parse(fs.readFileSync(weaponPath));
@@ -227,11 +227,6 @@ const weaponDict = absorbGreed(loadWeapons(goldPath, torpedoDict), loadWeapons(g
 const shipDict = loadShips(units, weaponDict);
 green('Loading Complete');
 
-// trader_light_frigate: 1,
-// trader_antifighter_frigate: 1,
-// trader_long_range_cruiser: 1,
-// trader_heavy_cruiser: 1,
-// trader_battle_capital_ship: 1,
 green('Starting Simulation...');
 
 Encounter.EarlyBattles.forEach(battle => battle.exec(shipDict, runs));
