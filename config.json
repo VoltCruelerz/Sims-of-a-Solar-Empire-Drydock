@@ -1,4 +1,5 @@
 {
-    "goldPath": "E:/Epic Games/SinsII/entities",
+    "livePath": "E:/Epic Games/SinsII/entities",
+    "testPath": "E:/Epic Games/SinsIITesting/entities",
     "greedPath": "C:/Users/VoltC/AppData/Local/sins2/mods/greed/entities"
 }

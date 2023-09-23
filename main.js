@@ -1,6 +1,7 @@
 import fs from 'fs';
 import chalk from 'chalk';
-import { Player } from './player.js';
+import { Encounter } from './encounter.js';
+import { Param, ParamType, getParams } from './params.js';
 
 const green = str => console.log(chalk.green(str));
 const red = str => console.log(chalk.red(str));
@@ -10,9 +11,21 @@ const magenta = str => console.log(chalk.magenta(str));
 const white = str => console.log(chalk.white(str));
 const bold = str => console.log(chalk.bold(str));
 
-// #region Load Data
-const { goldPath, greedPath } = JSON.parse(fs.readFileSync('./config.json'));
+// #region Params
+const {
+    isTest,
+    runs
+} = getParams([
+    new Param('test', ParamType.Boolean, { alias: 'isTest' }),
+    new Param('runs', ParamType.Integer, { defaultValue: 10 })
+]);
 
+const { livePath, testPath, greedPath } = JSON.parse(fs.readFileSync('./config.json'));
+const goldPath = isTest ? testPath : livePath;
+bold('Simulating for ' + goldPath);
+// #endregion
+
+// #region Load Data
 const unitSuffixLength = '.unit'.length;
 const weaponSuffixLength = '.weapon'.length;
 
@@ -206,102 +219,6 @@ const absorbGreed = (goldDict, greedDict) => {
 };
 // #endregion
 
-// #region Simulation
-/**
- * Creates a promise that waits for n ms
- * @param {number} ms 
- * @returns {Promise}
- */
-const sleep = (ms) => {
-    return new Promise((resolve) => {
-      setTimeout(resolve, ms);
-    });
-};
-
-/**
- * Executes a simulation run.
- * @param {{*}} shipDict 
- * @param {number} simRuns 
- * @param {{*}} config1 
- * @param {{*}} config2 
- */
-const exec = async (shipDict, simRuns, config1, config2) => {
-    const p1 = new Player(shipDict, config1, 10000, -1, 'Player1', chalk.yellow);
-    const p2 = new Player(shipDict, config2, -10000, 1, 'Player2', chalk.magentaBright);
-    
-    const simDuration = 600;// n seconds
-    const simInterval = 100;// Tick every n ms
-    const ticksPerSecond = Math.floor(1000 / simInterval);
-    const simTicks = simDuration * 1000 / simInterval;
-    let totalExecTicks = 0;
-    
-    // Repeat simulation for better data.
-    for (let j = 0; j < simRuns; j++) {
-        bold(`\n==================================\nExecuting Simulation Iteration = ${j}`);
-        // Run simulation
-        for (let i = 0; i < simTicks; i++) {
-            // if (i % (ticksPerSecond) === 0) bold(`Tick [${i}/${simTicks}] (${i * simInterval / 1000 }s)`);
-
-            p1.fleet.forEach(ship => ship.act(p1.fleet, p2.fleet, simInterval));
-            p2.fleet.forEach(ship => ship.act(p2.fleet, p1.fleet, simInterval));
-
-            p1.fleet = p1.fleet.filter(ship => !ship.isDead);
-            p2.fleet = p2.fleet.filter(ship => !ship.isDead);
-
-            if (p1.fleet.every(ship => ship.isDead)) {
-                console.log(p2.color('Player 2 Wins after ' + (i * simInterval / 1000 ) + 's'));
-                p2.wins++;
-                p2.fleet.forEach(survivor => survivor.printHealth(1));
-                totalExecTicks += i;
-                break;
-            }
-            if (p2.fleet.every(ship => ship.isDead)) {
-                console.log(p1.color('Player 1 Wins after ' + (i * simInterval / 1000 ) + 's'));
-                p1.wins++;
-                p1.fleet.forEach(survivor => survivor.printHealth(1));
-                totalExecTicks += i;
-                break;
-            }
-
-            // Run simulation at a speedup.
-            // const speedup = 10;
-            // await sleep(simInterval / speedup);
-        }
-        p1.reset();
-        p2.reset();
-    }
-    const avgTime = totalExecTicks * simInterval / (1000 * simRuns);
-    bold('\n==================================\nAverage Fight Duration: ' + avgTime + 's');
-    bold('P1 Wins: ' + p1.wins);
-    bold('P2 Wins: ' + p2.wins);
-
-    // Compile results
-    const table = [
-        ['Player'],
-        ['Dealt'],
-        ['Tanked'],
-        ['Performance'],
-        ['Supply'],
-        ['Credits'],
-        ['Metal'],
-        ['Crystal'],
-        ['Resources'],
-        ['PPS'],
-        ['PPR']
-    ];
-    const r1 = p1.getResults(simRuns);
-    const r2 = p2.getResults(simRuns);
-    const compile = (results) => {
-        Object.keys(results).forEach((key, i) => {
-            table[i].push(isNaN(results[key]) ? results[key] : Math.round(results[key] * 100) / 100);
-        });
-    };
-    compile(r1);
-    compile(r2);
-    console.table(table);
-};
-// #endregion
-
 green('Loading Data...');
 const unitDict = absorbGreed(loadUnits(goldPath), loadUnits(greedPath));
 const units = arrifyUnits(unitDict);
@@ -316,18 +233,7 @@ green('Loading Complete');
 // trader_heavy_cruiser: 1,
 // trader_battle_capital_ship: 1,
 green('Starting Simulation...');
-exec(shipDict, 10,
-    {
-        trader_battle_capital_ship: 1,
-        trader_light_frigate: 2,
-        trader_heavy_cruiser: 3,
-        trader_antifighter_frigate: 12
-    },
-    {
-        trader_battle_capital_ship: 1,
-        trader_light_frigate: 8,
-        // trader_antifighter_frigate: 1,
-        trader_long_range_cruiser: 8
-    }
-    );
-green('Simulation Complete.');
+
+Encounter.EarlyBattles.forEach(battle => battle.exec(shipDict, runs));
+
+green('Simulation Complete for ' + (isTest ? 'TEST' : 'LIVE'));
